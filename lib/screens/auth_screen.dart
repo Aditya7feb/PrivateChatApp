@@ -1,4 +1,7 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 class AuthScreen extends StatefulWidget {
   @override
@@ -8,6 +11,73 @@ class AuthScreen extends StatefulWidget {
 class _AuthScreenState extends State<AuthScreen> {
   @override
   Widget build(BuildContext context) {
+    final _auth = FirebaseAuth.instance;
+
+    var _isLoading = false;
+
+    void _submitAuthForm(String email, String password, String username,
+        bool isLogin, BuildContext ctx) async {
+      // ignore: unused_local_variable
+      UserCredential authResult;
+
+      try {
+        setState(() {
+          _isLoading = true;
+        });
+        if (isLogin) {
+          authResult = await _auth.signInWithEmailAndPassword(
+              email: email, password: password);
+        } else {
+          authResult = await _auth.createUserWithEmailAndPassword(
+            email: email,
+            password: password,
+          );
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            SnackBar(
+              content: Text("User Created Successfully"),
+              backgroundColor: Colors.green,
+            ),
+          );
+          await FirebaseFirestore.instance
+              .collection('users')
+              .doc(authResult.user!.uid)
+              .set(
+            {
+              'email': email,
+              'username': username,
+            },
+          );
+        }
+      } on PlatformException catch (e) {
+        var message = "An Error Occured, Check your Credentials";
+
+        if (e.message != null) {
+          message = e.message!.toString();
+        }
+
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(
+            content: Text(message),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isLoading = false;
+        });
+      } catch (e) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(
+            content: Text(e.toString()),
+            backgroundColor: Colors.red,
+          ),
+        );
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+
+    ;
     final deviceSize = MediaQuery.of(context).size;
     return Scaffold(
         body: SafeArea(
@@ -18,7 +88,10 @@ class _AuthScreenState extends State<AuthScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               HelloText(deviceSize: deviceSize),
-              LoginForm(deviceSize: deviceSize),
+              LoginForm(
+                  deviceSize: deviceSize,
+                  submitfn: _submitAuthForm,
+                  isLoading: _isLoading),
             ],
           ),
         ),
@@ -28,10 +101,20 @@ class _AuthScreenState extends State<AuthScreen> {
 }
 
 class LoginForm extends StatefulWidget {
-  const LoginForm({
-    Key? key,
+  LoginForm({
     required this.deviceSize,
-  }) : super(key: key);
+    required this.submitfn,
+    required this.isLoading,
+  });
+  bool isLoading = false;
+
+  final void Function(
+    String email,
+    String password,
+    String username,
+    bool isLogin,
+    BuildContext ctx,
+  ) submitfn;
 
   final Size deviceSize;
 
@@ -42,25 +125,27 @@ class LoginForm extends StatefulWidget {
 class _LoginFormState extends State<LoginForm> {
   GlobalKey<FormState> _loginKey = GlobalKey<FormState>();
   String? _email;
-  String? _userName;
+  String? _userName = "";
   bool isLogin = true;
   String? _pass;
 
-  bool isLoading = false;
-
   void _trySubmit() {
     final isValid = _loginKey.currentState!.validate();
-    isLoading = true;
+    widget.isLoading = true;
     FocusScope.of(context).unfocus();
 
     if (isValid) {
       _loginKey.currentState!.save();
+      widget.submitfn(
+        _email!,
+        _pass!,
+        _userName!,
+        isLogin,
+        context,
+      );
     }
 
-    print(_email);
-    print(_userName);
-    print(_pass);
-    isLoading = false;
+    widget.isLoading = false;
   }
 
   @override
@@ -73,12 +158,15 @@ class _LoginFormState extends State<LoginForm> {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextFormField(
+              key: ValueKey('email'),
               decoration: InputDecoration(hintText: "Email"),
               onSaved: (value) {
                 _email = value;
               },
               validator: (value) {
-                if (value!.isEmpty || !value.contains("@")) {
+                if (value!.isEmpty ||
+                    !value.contains("@") ||
+                    !value.contains(".com")) {
                   return "Invalid Email Address";
                 } else {
                   return null;
@@ -91,6 +179,7 @@ class _LoginFormState extends State<LoginForm> {
               ),
             if (!isLogin)
               TextFormField(
+                key: ValueKey('username'),
                 decoration: InputDecoration(hintText: "Username"),
                 onSaved: (value) {
                   _userName = value;
@@ -109,6 +198,7 @@ class _LoginFormState extends State<LoginForm> {
               height: widget.deviceSize.height * 0.02,
             ),
             TextFormField(
+              key: ValueKey('password'),
               decoration: InputDecoration(hintText: "Password"),
               obscureText: true,
               obscuringCharacter: "*",
@@ -135,7 +225,7 @@ class _LoginFormState extends State<LoginForm> {
                     borderRadius: BorderRadius.circular(50),
                     color: Colors.green),
                 child: Center(
-                    child: isLoading
+                    child: widget.isLoading
                         ? CircularProgressIndicator(
                             color: Colors.white,
                           )
@@ -151,23 +241,25 @@ class _LoginFormState extends State<LoginForm> {
                 _trySubmit();
               },
             ),
-            SizedBox(
-              height: 20,
-            ),
-            InkWell(
-              child: Text(
-                "Create New Account",
-                style: TextStyle(
-                    color: Colors.green,
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold),
+            if (!widget.isLoading)
+              SizedBox(
+                height: 20,
               ),
-              onTap: () {
-                setState(() {
-                  isLogin = !isLogin;
-                });
-              },
-            ),
+            if (!widget.isLoading)
+              InkWell(
+                child: Text(
+                  isLogin ? "Create New Account" : "I Already Have An Account",
+                  style: TextStyle(
+                      color: Colors.green,
+                      fontSize: 16,
+                      fontWeight: FontWeight.normal),
+                ),
+                onTap: () {
+                  setState(() {
+                    isLogin = !isLogin;
+                  });
+                },
+              ),
           ],
         ),
       ),
