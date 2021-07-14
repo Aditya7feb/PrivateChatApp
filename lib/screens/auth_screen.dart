@@ -77,7 +77,6 @@ class _AuthScreenState extends State<AuthScreen> {
       }
     }
 
-    ;
     final deviceSize = MediaQuery.of(context).size;
     return Scaffold(
         body: SafeArea(
@@ -100,6 +99,7 @@ class _AuthScreenState extends State<AuthScreen> {
   }
 }
 
+// ignore: must_be_immutable
 class LoginForm extends StatefulWidget {
   LoginForm({
     required this.deviceSize,
